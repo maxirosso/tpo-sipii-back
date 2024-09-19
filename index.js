@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
@@ -11,8 +12,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/pokemon', { useNewUrlParser: true, useUnifiedTopology: true });
+// Connect to MongoDB Atlas
+mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // User model
 const UserSchema = new mongoose.Schema({
@@ -34,7 +37,7 @@ const authenticateToken = (req, res, next) => {
   const token = req.headers['authorization'];
   if (!token) return res.sendStatus(403);
 
-  jwt.verify(token, 'secret', (err, user) => {
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
     next();
@@ -46,13 +49,9 @@ app.post('/api/register', async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create new user
     const newUser = new User({ username, password: hashedPassword });
     await newUser.save();
-
     res.status(201).json({ message: 'User created successfully!' });
   } catch (error) {
     res.status(400).json({ error: 'User registration failed!' });
@@ -67,13 +66,10 @@ app.post('/api/login', async (req, res) => {
     const user = await User.findOne({ username });
     if (!user) return res.status(400).json({ error: 'User not found!' });
 
-    // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ error: 'Invalid password!' });
 
-    // Create JWT token
-    const token = jwt.sign({ userId: user._id }, 'secret', { expiresIn: '1h' });
-
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.json({ token });
   } catch (error) {
     res.status(500).json({ error: 'Login failed!' });
@@ -124,17 +120,11 @@ app.post('/api/trade', authenticateToken, async (req, res) => {
 
   try {
     const card = await Card.findById(cardId);
-
-    // Ensure that the user owns the card
     if (card.owner.toString() !== req.user.userId) {
       return res.status(403).json({ error: 'You do not own this card!' });
     }
-
-    // Trade logic here: You would typically store a trade request and wait for the other user to accept
-    // For simplicity, we're just transferring ownership instantly.
     card.owner = targetUserId;
     await card.save();
-
     res.json({ message: 'Card trade successful!' });
   } catch (error) {
     res.status(500).json({ error: 'Trade request failed!' });
